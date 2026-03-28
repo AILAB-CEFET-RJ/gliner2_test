@@ -2,6 +2,7 @@
 import argparse
 import json
 import tempfile
+from dataclasses import fields
 from pathlib import Path
 
 from gliner2 import GLiNER2
@@ -147,29 +148,39 @@ def main() -> None:
 
         model = GLiNER2.from_pretrained(args.model)
 
-        config = TrainingConfig(
-            output_dir=args.output_dir,
-            experiment_name=args.experiment_name,
-            num_epochs=args.num_epochs,
-            batch_size=args.batch_size,
-            eval_batch_size=args.eval_batch_size,
-            gradient_accumulation_steps=args.grad_accum,
-            encoder_lr=args.encoder_lr,
-            task_lr=args.task_lr,
-            weight_decay=args.weight_decay,
-            warmup_ratio=args.warmup_ratio,
-            logging_steps=args.logging_steps,
-            eval_strategy="epoch",
-            eval_steps=args.eval_steps,
-            save_best=True,
-            early_stopping=True,
-            early_stopping_patience=2,
-            validate_data=True,
-            fp16=args.fp16,
-            gradient_checkpointing=args.gradient_checkpointing,
-            use_lora=False,
-            seed=args.seed,
-        )
+        config_kwargs = {
+            "output_dir": args.output_dir,
+            "experiment_name": args.experiment_name,
+            "num_epochs": args.num_epochs,
+            "batch_size": args.batch_size,
+            "eval_batch_size": args.eval_batch_size,
+            "gradient_accumulation_steps": args.grad_accum,
+            "encoder_lr": args.encoder_lr,
+            "task_lr": args.task_lr,
+            "weight_decay": args.weight_decay,
+            "warmup_ratio": args.warmup_ratio,
+            "logging_steps": args.logging_steps,
+            "eval_strategy": "epoch",
+            "eval_steps": args.eval_steps,
+            "save_best": True,
+            "early_stopping": True,
+            "early_stopping_patience": 2,
+            "validate_data": True,
+            "fp16": args.fp16,
+            "use_lora": False,
+            "seed": args.seed,
+        }
+
+        supported_fields = {field.name for field in fields(TrainingConfig)}
+        if "gradient_checkpointing" in supported_fields:
+            config_kwargs["gradient_checkpointing"] = args.gradient_checkpointing
+        elif args.gradient_checkpointing:
+            print(
+                "Warning: installed GLiNER2 TrainingConfig does not support "
+                "gradient_checkpointing; ignoring flag."
+            )
+
+        config = TrainingConfig(**config_kwargs)
 
         trainer = GLiNER2Trainer(model=model, config=config)
         results = trainer.train(train_data=train_data, eval_data=val_data)
