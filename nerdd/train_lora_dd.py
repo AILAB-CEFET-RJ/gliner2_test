@@ -13,8 +13,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--data",
-        default="nerdd/dd_corpus_small_train.jsonl",
-        help="Path to the converted training dataset in JSONL format.",
+        default="nerdd/dd_corpus_small_train.json",
+        help="Path to the training dataset in GLiNER2 format (records with text/spans).",
     )
     parser.add_argument(
         "--model",
