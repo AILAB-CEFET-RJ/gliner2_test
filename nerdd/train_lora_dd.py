@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import argparse
+import json
+import tempfile
 from pathlib import Path
 
 from gliner2 import GLiNER2
@@ -66,61 +68,82 @@ def main() -> None:
     if not data_path.exists():
         raise FileNotFoundError(f"Dataset not found: {data_path}")
 
-    dataset = TrainingDataset.load(data_path, shuffle=True, seed=args.seed)
+    temp_jsonl_path: Path | None = None
+    load_path = data_path
 
-    if not args.keep_empty_examples:
-        dataset = dataset.filter(lambda ex: bool(ex.entities))
+    try:
+        if data_path.suffix == ".json":
+            records = json.loads(data_path.read_text(encoding="utf-8"))
+            if not isinstance(records, list):
+                raise ValueError(f"Expected a JSON array in {data_path}")
 
-    train_data, val_data, _ = dataset.split(
-        train_ratio=args.train_ratio,
-        val_ratio=args.val_ratio,
-        test_ratio=1.0 - args.train_ratio - args.val_ratio,
-        shuffle=True,
-        seed=args.seed,
-    )
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".jsonl", encoding="utf-8", delete=False
+            ) as temp_file:
+                for record in records:
+                    temp_file.write(json.dumps(record, ensure_ascii=False) + "\n")
+                temp_jsonl_path = Path(temp_file.name)
 
-    if len(train_data.examples) == 0:
-        raise ValueError("Training split is empty.")
-    if len(val_data.examples) == 0:
-        raise ValueError("Validation split is empty.")
+            load_path = temp_jsonl_path
 
-    model = GLiNER2.from_pretrained(args.model)
+        dataset = TrainingDataset.load(load_path, shuffle=True, seed=args.seed)
 
-    config = TrainingConfig(
-        output_dir=args.output_dir,
-        experiment_name=args.experiment_name,
-        num_epochs=args.num_epochs,
-        batch_size=args.batch_size,
-        eval_batch_size=args.eval_batch_size,
-        gradient_accumulation_steps=args.grad_accum,
-        task_lr=args.task_lr,
-        weight_decay=args.weight_decay,
-        warmup_ratio=args.warmup_ratio,
-        logging_steps=args.logging_steps,
-        eval_strategy="epoch",
-        eval_steps=args.eval_steps,
-        save_best=True,
-        early_stopping=True,
-        early_stopping_patience=2,
-        validate_data=True,
-        fp16=args.fp16,
-        use_lora=True,
-        lora_r=args.lora_r,
-        lora_alpha=args.lora_alpha,
-        lora_dropout=args.lora_dropout,
-        lora_target_modules=["encoder"],
-        save_adapter_only=True,
-        seed=args.seed,
-    )
+        if not args.keep_empty_examples:
+            dataset = dataset.filter(lambda ex: bool(ex.entities))
 
-    trainer = GLiNER2Trainer(model=model, config=config)
-    results = trainer.train(train_data=train_data, eval_data=val_data)
+        train_data, val_data, _ = dataset.split(
+            train_ratio=args.train_ratio,
+            val_ratio=args.val_ratio,
+            test_ratio=1.0 - args.train_ratio - args.val_ratio,
+            shuffle=True,
+            seed=args.seed,
+        )
 
-    print("Training completed.")
-    print(f"Train examples: {len(train_data.examples)}")
-    print(f"Validation examples: {len(val_data.examples)}")
-    print(f"Best metric: {results.get('best_metric')}")
-    print(f"Output dir: {args.output_dir}")
+        if len(train_data.examples) == 0:
+            raise ValueError("Training split is empty.")
+        if len(val_data.examples) == 0:
+            raise ValueError("Validation split is empty.")
+
+        model = GLiNER2.from_pretrained(args.model)
+
+        config = TrainingConfig(
+            output_dir=args.output_dir,
+            experiment_name=args.experiment_name,
+            num_epochs=args.num_epochs,
+            batch_size=args.batch_size,
+            eval_batch_size=args.eval_batch_size,
+            gradient_accumulation_steps=args.grad_accum,
+            task_lr=args.task_lr,
+            weight_decay=args.weight_decay,
+            warmup_ratio=args.warmup_ratio,
+            logging_steps=args.logging_steps,
+            eval_strategy="epoch",
+            eval_steps=args.eval_steps,
+            save_best=True,
+            early_stopping=True,
+            early_stopping_patience=2,
+            validate_data=True,
+            fp16=args.fp16,
+            use_lora=True,
+            lora_r=args.lora_r,
+            lora_alpha=args.lora_alpha,
+            lora_dropout=args.lora_dropout,
+            lora_target_modules=["encoder"],
+            save_adapter_only=True,
+            seed=args.seed,
+        )
+
+        trainer = GLiNER2Trainer(model=model, config=config)
+        results = trainer.train(train_data=train_data, eval_data=val_data)
+
+        print("Training completed.")
+        print(f"Train examples: {len(train_data.examples)}")
+        print(f"Validation examples: {len(val_data.examples)}")
+        print(f"Best metric: {results.get('best_metric')}")
+        print(f"Output dir: {args.output_dir}")
+    finally:
+        if temp_jsonl_path and temp_jsonl_path.exists():
+            temp_jsonl_path.unlink()
 
 
 if __name__ == "__main__":
