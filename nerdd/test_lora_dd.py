@@ -22,13 +22,17 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--adapter-dir",
-        default=DEFAULT_ADAPTER_DIR,
-        help="Path to the trained LoRA adapter directory.",
+        help="Path to the trained LoRA adapter directory. If omitted, --model is used as a standalone model for inference.",
     )
     parser.add_argument(
         "--model",
         default=DEFAULT_MODEL,
-        help="Base GLiNER2 model name or local path.",
+        help="Base model name/path for LoRA mode, or full fine-tuned model path/name when --adapter-dir is omitted.",
+    )
+    parser.add_argument(
+        "--base-model",
+        default=DEFAULT_MODEL,
+        help="Base model name/path used for comparison against a fine-tuned model or LoRA adapter.",
     )
     parser.add_argument(
         "--text",
@@ -185,24 +189,31 @@ def print_entities(title: str, entities: list[dict]) -> None:
 
 def main() -> None:
     args = parse_args()
-    adapter_dir = Path(args.adapter_dir)
-    if not adapter_dir.exists():
-        raise FileNotFoundError(f"Adapter directory not found: {adapter_dir}")
-
     texts = load_texts(args)
+    adapter_dir = Path(args.adapter_dir) if args.adapter_dir else None
 
-    print("Loading base model...")
-    model = GLiNER2.from_pretrained(args.model)
+    if adapter_dir is not None:
+        if not adapter_dir.exists():
+            raise FileNotFoundError(f"Adapter directory not found: {adapter_dir}")
 
-    print(f"Loading adapter from {adapter_dir}...")
-    model.load_adapter(str(adapter_dir))
-    print(f"Has adapter: {getattr(model, 'has_adapter', 'unknown')}")
+        print(f"Loading base model for LoRA mode: {args.model}")
+        model = GLiNER2.from_pretrained(args.model)
 
-    lora_count = count_lora_layers(model)
-    if lora_count is None:
-        print("LoRA layers: unavailable")
+        print(f"Loading adapter from {adapter_dir}...")
+        model.load_adapter(str(adapter_dir))
+        model_title = "Adapter output:"
+        print(f"Has adapter: {getattr(model, 'has_adapter', 'unknown')}")
+
+        lora_count = count_lora_layers(model)
+        if lora_count is None:
+            print("LoRA layers: unavailable")
+        else:
+            print(f"LoRA layers: {lora_count}")
     else:
-        print(f"LoRA layers: {lora_count}")
+        print(f"Loading full model: {args.model}")
+        model = GLiNER2.from_pretrained(args.model)
+        model_title = "Fine-tuned model output:"
+        print("Standalone model mode (no adapter loaded).")
 
     print(f"Entity types: {DEFAULT_ENTITY_TYPES}")
     print(f"Texts to evaluate: {len(texts)}")
@@ -213,17 +224,27 @@ def main() -> None:
         print("=" * 80)
         print(text)
 
-        adapter_entities = extract_entities(model, text)
-        print_entities("Adapter output:", adapter_entities)
+        model_entities = extract_entities(model, text)
+        print_entities(model_title, model_entities)
 
         if args.compare_base:
-            model.unload_adapter()
-            print(f"Has adapter after unload: {getattr(model, 'has_adapter', 'unknown')}")
-            base_entities = extract_entities(model, text)
-            print_entities("Base model output:", base_entities)
+            if adapter_dir is not None:
+                model.unload_adapter()
+                print(
+                    f"Has adapter after unload: {getattr(model, 'has_adapter', 'unknown')}"
+                )
+                base_entities = extract_entities(model, text)
+                print_entities("Base model output:", base_entities)
 
-            model.load_adapter(str(adapter_dir))
-            print(f"Has adapter after reload: {getattr(model, 'has_adapter', 'unknown')}")
+                model.load_adapter(str(adapter_dir))
+                print(
+                    f"Has adapter after reload: {getattr(model, 'has_adapter', 'unknown')}"
+                )
+            else:
+                print(f"Loading comparison base model: {args.base_model}")
+                base_model = GLiNER2.from_pretrained(args.base_model)
+                base_entities = extract_entities(base_model, text)
+                print_entities("Base model output:", base_entities)
 
 
 if __name__ == "__main__":
