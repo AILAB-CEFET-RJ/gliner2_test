@@ -111,10 +111,38 @@ def count_lora_layers(model: GLiNER2) -> int | None:
     return sum(1 for module in model.modules() if isinstance(module, LoRALayer))
 
 
-def extract_entities(model: GLiNER2, text: str) -> list[dict]:
+def extract_entities(model: GLiNER2, text: str) -> object:
     result = model.extract_entities(text, DEFAULT_ENTITY_TYPES)
     if isinstance(result, dict):
-        return result.get("entities", [])
+        return result.get("entities", result)
+    return result
+
+
+def normalize_entities(entities: object) -> list[dict]:
+    if isinstance(entities, list):
+        normalized: list[dict] = []
+        for entity in entities:
+            if isinstance(entity, dict):
+                normalized.append(entity)
+            elif isinstance(entity, str):
+                normalized.append({"text": entity})
+        return normalized
+
+    if isinstance(entities, dict):
+        normalized = []
+        for label, mentions in entities.items():
+            if isinstance(mentions, list):
+                for mention in mentions:
+                    if isinstance(mention, dict):
+                        normalized.append({"label": label, **mention})
+                    else:
+                        normalized.append({"text": str(mention), "label": label})
+            elif isinstance(mentions, dict):
+                normalized.append({"label": label, **mentions})
+            else:
+                normalized.append({"text": str(mentions), "label": label})
+        return normalized
+
     return []
 
 
@@ -134,6 +162,7 @@ def format_entity(entity: dict) -> str:
 
 
 def print_entities(title: str, entities: list[dict]) -> None:
+    entities = normalize_entities(entities)
     print(title)
     if not entities:
         print("  (no entities)")
