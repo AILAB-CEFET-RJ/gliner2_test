@@ -9,14 +9,21 @@ from gliner2.training.data import TrainingDataset
 from gliner2.training.trainer import GLiNER2Trainer, TrainingConfig
 
 
+LABEL_MAP = {
+    "Person": "person",
+    "Location": "location",
+    "Organization": "organization",
+}
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Train a GLiNER2 LoRA adapter on the NERDD dataset."
     )
     parser.add_argument(
         "--data",
-        default="nerdd/dd_corpus_small_train.json",
-        help="Path to the training dataset in GLiNER2 format (records with text/spans).",
+        default="nerdd/dd_corpus_small_train.jsonl",
+        help="Path to the training dataset in GLiNER2 JSONL format.",
     )
     parser.add_argument(
         "--model",
@@ -81,7 +88,28 @@ def main() -> None:
                 mode="w", suffix=".jsonl", encoding="utf-8", delete=False
             ) as temp_file:
                 for record in records:
-                    temp_file.write(json.dumps(record, ensure_ascii=False) + "\n")
+                    if "input" in record and "output" in record:
+                        converted = record
+                    else:
+                        text = record["text"]
+                        entities: dict[str, list[str]] = {}
+
+                        for span in record.get("spans", []):
+                            start = span["start"]
+                            end = span["end"]
+                            label = LABEL_MAP.get(span["label"], span["label"].lower())
+                            mention = text[start:end].strip()
+                            if mention:
+                                entities.setdefault(label, [])
+                                if mention not in entities[label]:
+                                    entities[label].append(mention)
+
+                        converted = {
+                            "input": text,
+                            "output": {"entities": entities},
+                        }
+
+                    temp_file.write(json.dumps(converted, ensure_ascii=False) + "\n")
                 temp_jsonl_path = Path(temp_file.name)
 
             load_path = temp_jsonl_path
