@@ -126,7 +126,7 @@ def normalize_entities(entities: object) -> list[dict]:
                 normalized.append(entity)
             elif isinstance(entity, str):
                 normalized.append({"text": entity})
-        return normalized
+        return sort_entities(normalized)
 
     if isinstance(entities, dict):
         normalized = []
@@ -141,9 +141,21 @@ def normalize_entities(entities: object) -> list[dict]:
                 normalized.append({"label": label, **mentions})
             else:
                 normalized.append({"text": str(mentions), "label": label})
-        return normalized
+        return sort_entities(normalized)
 
     return []
+
+
+def sort_entities(entities: list[dict]) -> list[dict]:
+    return sorted(
+        entities,
+        key=lambda entity: (
+            str(entity.get("label", "")),
+            str(entity.get("text", "")),
+            str(entity.get("start", "")),
+            str(entity.get("end", "")),
+        ),
+    )
 
 
 def format_entity(entity: dict) -> str:
